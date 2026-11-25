@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa GTA 6 – test</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+  #app { display: flex; height: 100%; }
+  #panel { width: 220px; padding: 14px; background: #1b1f27; color: #eee; box-sizing: border-box; overflow-y: auto; }
+  #panel h1 { font-size: 18px; margin: 0 0 12px; }
+  #panel label { display: flex; align-items: center; gap: 8px; margin: 8px 0; cursor: pointer; }
+  .tecka { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  #mapa { flex: 1; background: #0f1218; }
+  @media (max-width: 600px) {
+    #app { flex-direction: column-reverse; }
+    #panel { width: 100%; max-height: 35%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>Mapa GTA 6</h1>
+    <div id="filtry"></div>
+  </div>
+  <div id="mapa"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ---------- 1) KATEGORIE (název česky + barva) ----------
+const KATEGORIE = {
+  zbrane:  { nazev: "Zbraně",     barva: "#e74c3c" },
+  obchody: { nazev: "Obchody",    barva: "#3498db" }
+};
+
+// ---------- 2) BODY (zatím jen 3 testovací, souřadnice y = nahoru, x = doprava) ----------
+const BODY = [
+  { nazev: "Testovací zbraň 1", kat: "zbrane",  x: 250, y: 700, popis: "Tady bude popis česky." },
+  { nazev: "Testovací zbraň 2", kat: "zbrane",  x: 600, y: 300, popis: "Další testovací bod." },
+  { nazev: "Testovací obchod",  kat: "obchody", x: 450, y: 500, popis: "Obchod v centru mapy." }
+];
+
+// ---------- 3) MAPA S VLASTNÍM PODKLADEM ----------
+// Zástupný podklad (mřížka). Později ho nahradíme skutečným obrázkem mapy.
+const rozmer = 1000;
+const podklad = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000">
+     <rect width="1000" height="1000" fill="#2b3a2f"/>
+     <g stroke="#3e5443" stroke-width="2">
+       ${Array.from({length: 9}, (_, i) => `<line x1="${(i+1)*100}" y1="0" x2="${(i+1)*100}" y2="1000"/><line x1="0" y1="${(i+1)*100}" x2="1000" y2="${(i+1)*100}"/>`).join('')}
+     </g>
+     <text x="500" y="500" fill="#6f8f77" font-size="48" text-anchor="middle" font-family="sans-serif">Sem přijde mapa</text>
+   </svg>`);
+
+const hranice = [[0, 0], [rozmer, rozmer]];
+const mapa = L.map('mapa', { crs: L.CRS.Simple, minZoom: -1, maxZoom: 3, zoomSnap: 0.25 });
+L.imageOverlay(podklad, hranice).addTo(mapa);
+mapa.fitBounds(hranice);
+
+// ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
+const vrstvy = {};
+for (const klic in KATEGORIE) {
+  vrstvy[klic] = L.layerGroup().addTo(mapa);
+}
+
+for (const b of BODY) {
+  const k = KATEGORIE[b.kat];
+  L.circleMarker([b.y, b.x], {
+    radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1
+  })
+  .bindPopup(`<b>${b.nazev}</b><br><i>${k.nazev}</i><br>${b.popis}`)
+  .addTo(vrstvy[b.kat]);
+}
+
+const filtry = document.getElementById('filtry');
+for (const klic in KATEGORIE) {
+  const k = KATEGORIE[klic];
+  const label = document.createElement('label');
+  label.innerHTML = `<input type="checkbox" checked> <span class="tecka" style="background:${k.barva}"></span> ${k.nazev}`;
+  label.querySelector('input').addEventListener('change', e => {
+    e.target.checked ? vrstvy[klic].addTo(mapa) : mapa.removeLayer(vrstvy[klic]);
+  });
+  filtry.appendChild(label);
+}
+</script>
+</body>
+</html>
