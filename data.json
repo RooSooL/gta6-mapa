@@ -1,0 +1,11 @@
+{
+  "kategorie": {
+    "zbrane":  { "nazev": "Zbraně",  "barva": "#e74c3c" },
+    "obchody": { "nazev": "Obchody", "barva": "#3498db" }
+  },
+  "body": [
+    { "nazev": "Testovací zbraň 1", "kat": "zbrane",  "x": 250, "y": 700, "popis": "Tady bude popis česky." },
+    { "nazev": "Testovací zbraň 2", "kat": "zbrane",  "x": 600, "y": 300, "popis": "Další testovací bod." },
+    { "nazev": "Testovací obchod",  "kat": "obchody", "x": 450, "y": 500, "popis": "Obchod v centru mapy." }
+  ]
+}
