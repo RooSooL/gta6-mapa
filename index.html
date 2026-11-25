@@ -73,6 +73,13 @@ zkusObrazek(['mapa.jpg', 'mapa.png'], (zdroj, sirka, vyska) => {
   mapa.fitBounds(hranice);
   mapa.setMaxBounds([[-vyska * 0.2, -sirka * 0.2], [vyska * 1.2, sirka * 1.2]]);
 
+  // Přidej dovnitř zkusObrazek(...) pod definici proměnné mapa:
+mapa.on('click', (e) => {
+  const x = Math.round((e.latlng.lng / sirka) * 1000);
+  const y = Math.round((e.latlng.lat / vyska) * 1000);
+  console.log(`x: ${x}, y: ${y}`);
+});
+  
   // ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
   const vrstvy = {};
   for (const klic in KATEGORIE) vrstvy[klic] = L.layerGroup().addTo(mapa);
