@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mapa GTA 6 – test</title>
+<title>Mapa GTA 6</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
@@ -36,17 +36,19 @@ const KATEGORIE = {
   obchody: { nazev: "Obchody",    barva: "#3498db" }
 };
 
-// ---------- 2) BODY (zatím jen 3 testovací, souřadnice y = nahoru, x = doprava) ----------
+// ---------- 2) BODY ----------
+// Souřadnice jsou v rozsahu 0–1000 (x = zleva doprava, y = zdola nahoru),
+// takže fungují pro libovolně velký obrázek mapy.
 const BODY = [
   { nazev: "Testovací zbraň 1", kat: "zbrane",  x: 250, y: 700, popis: "Tady bude popis česky." },
   { nazev: "Testovací zbraň 2", kat: "zbrane",  x: 600, y: 300, popis: "Další testovací bod." },
   { nazev: "Testovací obchod",  kat: "obchody", x: 450, y: 500, popis: "Obchod v centru mapy." }
 ];
 
-// ---------- 3) MAPA S VLASTNÍM PODKLADEM ----------
-// Zástupný podklad (mřížka). Později ho nahradíme skutečným obrázkem mapy.
-const rozmer = 1000;
-const podklad = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+// ---------- 3) PODKLAD MAPY ----------
+// Stránka hledá soubor "mapa.jpg" (nebo mapa.png) vedle index.html.
+// Pokud ho nenajde, použije zástupnou mřížku.
+const ZASTUPNY = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000">
      <rect width="1000" height="1000" fill="#2b3a2f"/>
      <g stroke="#3e5443" stroke-width="2">
@@ -55,36 +57,46 @@ const podklad = 'data:image/svg+xml;utf8,' + encodeURIComponent(
      <text x="500" y="500" fill="#6f8f77" font-size="48" text-anchor="middle" font-family="sans-serif">Sem přijde mapa</text>
    </svg>`);
 
-const hranice = [[0, 0], [rozmer, rozmer]];
-const mapa = L.map('mapa', { crs: L.CRS.Simple, minZoom: -1, maxZoom: 3, zoomSnap: 0.25 });
-L.imageOverlay(podklad, hranice).addTo(mapa);
-mapa.fitBounds(hranice);
-
-// ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
-const vrstvy = {};
-for (const klic in KATEGORIE) {
-  vrstvy[klic] = L.layerGroup().addTo(mapa);
+function zkusObrazek(seznam, hotovo) {
+  if (seznam.length === 0) return hotovo(ZASTUPNY, 1000, 1000);
+  const [prvni, ...zbytek] = seznam;
+  const img = new Image();
+  img.onload = () => hotovo(prvni, img.naturalWidth, img.naturalHeight);
+  img.onerror = () => zkusObrazek(zbytek, hotovo);
+  img.src = prvni;
 }
 
-for (const b of BODY) {
-  const k = KATEGORIE[b.kat];
-  L.circleMarker([b.y, b.x], {
-    radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1
-  })
-  .bindPopup(`<b>${b.nazev}</b><br><i>${k.nazev}</i><br>${b.popis}`)
-  .addTo(vrstvy[b.kat]);
-}
+zkusObrazek(['mapa.jpg', 'mapa.png'], (zdroj, sirka, vyska) => {
+  const hranice = [[0, 0], [vyska, sirka]];
+  const mapa = L.map('mapa', { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25 });
+  L.imageOverlay(zdroj, hranice).addTo(mapa);
+  mapa.fitBounds(hranice);
+  mapa.setMaxBounds([[-vyska * 0.2, -sirka * 0.2], [vyska * 1.2, sirka * 1.2]]);
 
-const filtry = document.getElementById('filtry');
-for (const klic in KATEGORIE) {
-  const k = KATEGORIE[klic];
-  const label = document.createElement('label');
-  label.innerHTML = `<input type="checkbox" checked> <span class="tecka" style="background:${k.barva}"></span> ${k.nazev}`;
-  label.querySelector('input').addEventListener('change', e => {
-    e.target.checked ? vrstvy[klic].addTo(mapa) : mapa.removeLayer(vrstvy[klic]);
-  });
-  filtry.appendChild(label);
-}
+  // ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
+  const vrstvy = {};
+  for (const klic in KATEGORIE) vrstvy[klic] = L.layerGroup().addTo(mapa);
+
+  for (const b of BODY) {
+    const k = KATEGORIE[b.kat];
+    L.circleMarker([b.y / 1000 * vyska, b.x / 1000 * sirka], {
+      radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1
+    })
+    .bindPopup(`<b>${b.nazev}</b><br><i>${k.nazev}</i><br>${b.popis}`)
+    .addTo(vrstvy[b.kat]);
+  }
+
+  const filtry = document.getElementById('filtry');
+  for (const klic in KATEGORIE) {
+    const k = KATEGORIE[klic];
+    const label = document.createElement('label');
+    label.innerHTML = `<input type="checkbox" checked> <span class="tecka" style="background:${k.barva}"></span> ${k.nazev}`;
+    label.querySelector('input').addEventListener('change', e => {
+      e.target.checked ? vrstvy[klic].addTo(mapa) : mapa.removeLayer(vrstvy[klic]);
+    });
+    filtry.appendChild(label);
+  }
+});
 </script>
 </body>
 </html>
