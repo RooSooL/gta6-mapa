@@ -73,13 +73,6 @@ zkusObrazek(['mapa.jpg', 'mapa.png'], (zdroj, sirka, vyska) => {
   mapa.fitBounds(hranice);
   mapa.setMaxBounds([[-vyska * 0.2, -sirka * 0.2], [vyska * 1.2, sirka * 1.2]]);
 
-  // Přidej dovnitř zkusObrazek(...) pod definici proměnné mapa:
-mapa.on('click', (e) => {
-  const x = Math.round((e.latlng.lng / sirka) * 1000);
-  const y = Math.round((e.latlng.lat / vyska) * 1000);
-  console.log(`x: ${x}, y: ${y}`);
-});
-  
   // ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
   const vrstvy = {};
   for (const klic in KATEGORIE) vrstvy[klic] = L.layerGroup().addTo(mapa);
@@ -87,7 +80,8 @@ mapa.on('click', (e) => {
   for (const b of BODY) {
     const k = KATEGORIE[b.kat];
     L.circleMarker([b.y / 1000 * vyska, b.x / 1000 * sirka], {
-      radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1
+      radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1,
+      bubblingMouseEvents: false
     })
     .bindPopup(`<b>${b.nazev}</b><br><i>${k.nazev}</i><br>${b.popis}`)
     .addTo(vrstvy[b.kat]);
@@ -103,6 +97,25 @@ mapa.on('click', (e) => {
     });
     filtry.appendChild(label);
   }
+
+  // ---------- 5) POMŮCKA: klik na mapu = souřadnice ----------
+  // Po dokončení umisťování bodů můžeme tuhle část smazat.
+  mapa.on('click', e => {
+    const x = Math.round(e.latlng.lng / sirka * 1000);
+    const y = Math.round(e.latlng.lat / vyska * 1000);
+    const radek = `{ nazev: "", kat: "zbrane", x: ${x}, y: ${y}, popis: "" },`;
+
+    const obal = document.createElement('div');
+    obal.innerHTML = `<b>x: ${x}, y: ${y}</b><br>
+      <code style="font-size:11px">${radek}</code><br>
+      <button style="margin-top:6px;cursor:pointer">Kopírovat řádek</button>`;
+    obal.querySelector('button').addEventListener('click', ev => {
+      navigator.clipboard.writeText(radek);
+      ev.target.textContent = 'Zkopírováno ✓';
+    });
+
+    L.popup().setLatLng(e.latlng).setContent(obal).openOn(mapa);
+  });
 });
 </script>
 </body>
