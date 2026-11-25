@@ -11,7 +11,8 @@
   #panel { width: 220px; padding: 14px; background: #1b1f27; color: #eee; box-sizing: border-box; overflow-y: auto; }
   #panel h1 { font-size: 18px; margin: 0 0 12px; }
   #panel label { display: flex; align-items: center; gap: 8px; margin: 8px 0; cursor: pointer; }
-  .tecka { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .tecka { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+  #zprava { font-size: 13px; color: #f5b041; margin-top: 12px; line-height: 1.4; }
   #mapa { flex: 1; background: #0f1218; }
   @media (max-width: 600px) {
     #app { flex-direction: column-reverse; }
@@ -23,37 +24,64 @@
 <div id="app">
   <div id="panel">
     <h1>Mapa GTA 6</h1>
-    <div id="filtry"></div>
+    <div id="filtry">Načítám…</div>
+    <div id="zprava"></div>
   </div>
   <div id="mapa"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// ---------- 1) KATEGORIE (název česky + barva) ----------
-const KATEGORIE = {
-  zbrane:  { nazev: "Zbraně",     barva: "#e74c3c" },
-  obchody: { nazev: "Obchody",    barva: "#3498db" }
-};
+// ============ NASTAVENÍ ============
+// ID tabulky z adresy Google Sheetu (část mezi /d/ a /edit)
+const SHEET_ID = '1A3olh4w_5hoqzub-3YUViLdCLKtqEoBWpt9cenop_B0';
+// Názvy listů v tabulce
+const LIST_BODY = 'body';
+const LIST_KATEGORIE = 'kategorie';
+// ===================================
 
-// ---------- 2) BODY ----------
-// Souřadnice jsou v rozsahu 0–1000 (x = zleva doprava, y = zdola nahoru),
-// takže fungují pro libovolně velký obrázek mapy.
-const BODY = [
-  { nazev: "Testovací zbraň 1", kat: "zbrane",  x: 250, y: 700, popis: "Tady bude popis česky." },
-  { nazev: "Testovací zbraň 2", kat: "zbrane",  x: 600, y: 300, popis: "Další testovací bod." },
-  { nazev: "Testovací obchod",  kat: "obchody", x: 450, y: 500, popis: "Obchod v centru mapy." }
-];
+// ---------- Pomocné funkce ----------
+function esc(t) {
+  return String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function cislo(v) { return parseFloat(String(v).trim().replace(',', '.')); }
 
-// ---------- 3) PODKLAD MAPY ----------
-// Stránka hledá soubor "mapa.jpg" (nebo mapa.png) vedle index.html.
-// Pokud ho nenajde, použije zástupnou mřížku.
+// Jednoduchý parser CSV (zvládá uvozovky a čárky uvnitř textu)
+function parsujCsv(text) {
+  const radky = []; let radek = [], bunka = '', uvnitr = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (uvnitr) {
+      if (c === '"' && text[i + 1] === '"') { bunka += '"'; i++; }
+      else if (c === '"') uvnitr = false;
+      else bunka += c;
+    } else if (c === '"') uvnitr = true;
+    else if (c === ',') { radek.push(bunka); bunka = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      radek.push(bunka); bunka = ''; radky.push(radek); radek = [];
+    } else bunka += c;
+  }
+  if (bunka !== '' || radek.length) { radek.push(bunka); radky.push(radek); }
+  return radky;
+}
+
+async function nactiList(nazev) {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(nazev)}`;
+  const odpoved = await fetch(url);
+  if (!odpoved.ok) throw new Error(`List "${nazev}": HTTP ${odpoved.status}`);
+  const radky = parsujCsv(await odpoved.text());
+  if (radky.length === 0) return [];
+  const zahlavi = radky[0].map(h => h.trim().toLowerCase());
+  return radky.slice(1)
+    .filter(r => r.some(b => b.trim() !== ''))
+    .map(r => Object.fromEntries(zahlavi.map((h, i) => [h, (r[i] ?? '').trim()])));
+}
+
+// ---------- Podklad mapy ----------
 const ZASTUPNY = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000">
      <rect width="1000" height="1000" fill="#2b3a2f"/>
-     <g stroke="#3e5443" stroke-width="2">
-       ${Array.from({length: 9}, (_, i) => `<line x1="${(i+1)*100}" y1="0" x2="${(i+1)*100}" y2="1000"/><line x1="0" y1="${(i+1)*100}" x2="1000" y2="${(i+1)*100}"/>`).join('')}
-     </g>
      <text x="500" y="500" fill="#6f8f77" font-size="48" text-anchor="middle" font-family="sans-serif">Sem přijde mapa</text>
    </svg>`);
 
@@ -65,58 +93,87 @@ function zkusObrazek(seznam, hotovo) {
   img.onerror = () => zkusObrazek(zbytek, hotovo);
   img.src = prvni;
 }
+const nactiPodklad = () => new Promise(res => zkusObrazek(['mapa.jpg', 'mapa.png'], (z, s, v) => res({ z, s, v })));
 
-zkusObrazek(['mapa.jpg', 'mapa.png'], (zdroj, sirka, vyska) => {
+// ---------- Hlavní část ----------
+(async function () {
+  const filtry = document.getElementById('filtry');
+  const zprava = document.getElementById('zprava');
+
+  let podklad, kategorieRadky, bodyRadky;
+  try {
+    [podklad, kategorieRadky, bodyRadky] = await Promise.all([
+      nactiPodklad(), nactiList(LIST_KATEGORIE), nactiList(LIST_BODY)
+    ]);
+  } catch (chyba) {
+    filtry.textContent = '';
+    zprava.textContent = 'Nepodařilo se načíst tabulku. Zkontrolujte, že je sdílená jako „Kdokoli s odkazem – Čtenář“ a že listy se jmenují „body“ a „kategorie“.';
+    console.error(chyba);
+    return;
+  }
+
+  const { z: zdroj, s: sirka, v: vyska } = podklad;
   const hranice = [[0, 0], [vyska, sirka]];
   const mapa = L.map('mapa', { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25 });
   L.imageOverlay(zdroj, hranice).addTo(mapa);
   mapa.fitBounds(hranice);
   mapa.setMaxBounds([[-vyska * 0.2, -sirka * 0.2], [vyska * 1.2, sirka * 1.2]]);
 
-  // ---------- 4) VRSTVY PODLE KATEGORIÍ + FILTRY ----------
+  // Kategorie z tabulky
+  const KATEGORIE = {};
+  for (const r of kategorieRadky) {
+    if (r.klic) KATEGORIE[r.klic] = { nazev: r.nazev || r.klic, barva: r.barva || '#999999' };
+  }
+
+  // Vrstvy
   const vrstvy = {};
   for (const klic in KATEGORIE) vrstvy[klic] = L.layerGroup().addTo(mapa);
 
-  for (const b of BODY) {
-    const k = KATEGORIE[b.kat];
-    L.circleMarker([b.y / 1000 * vyska, b.x / 1000 * sirka], {
-      radius: 8, color: "#fff", weight: 2, fillColor: k.barva, fillOpacity: 1,
+  // Body z tabulky
+  const problemy = [];
+  let pocet = 0;
+  for (const b of bodyRadky) {
+    const x = cislo(b.x), y = cislo(b.y);
+    const klic = b.kategorie;
+    if (!KATEGORIE[klic]) { problemy.push(`„${b.nazev || '?'}“: neznámá kategorie „${klic}“`); continue; }
+    if (isNaN(x) || isNaN(y)) { problemy.push(`„${b.nazev || '?'}“: chybí souřadnice`); continue; }
+    const k = KATEGORIE[klic];
+    L.circleMarker([y / 1000 * vyska, x / 1000 * sirka], {
+      radius: 8, color: '#fff', weight: 2, fillColor: k.barva, fillOpacity: 1,
       bubblingMouseEvents: false
     })
-    .bindPopup(`<b>${b.nazev}</b><br><i>${k.nazev}</i><br>${b.popis}`)
-    .addTo(vrstvy[b.kat]);
+    .bindPopup(`<b>${esc(b.nazev)}</b><br><i>${esc(k.nazev)}</i><br>${esc(b.popis)}`)
+    .addTo(vrstvy[klic]);
+    pocet++;
   }
 
-  const filtry = document.getElementById('filtry');
+  // Filtry
+  filtry.textContent = '';
   for (const klic in KATEGORIE) {
     const k = KATEGORIE[klic];
     const label = document.createElement('label');
-    label.innerHTML = `<input type="checkbox" checked> <span class="tecka" style="background:${k.barva}"></span> ${k.nazev}`;
+    label.innerHTML = `<input type="checkbox" checked> <span class="tecka" style="background:${esc(k.barva)}"></span> ${esc(k.nazev)}`;
     label.querySelector('input').addEventListener('change', e => {
       e.target.checked ? vrstvy[klic].addTo(mapa) : mapa.removeLayer(vrstvy[klic]);
     });
     filtry.appendChild(label);
   }
+  if (problemy.length) zprava.innerHTML = '⚠ Přeskočeno:<br>' + problemy.map(esc).join('<br>');
 
-  // ---------- 5) POMŮCKA: klik na mapu = souřadnice ----------
-  // Po dokončení umisťování bodů můžeme tuhle část smazat.
+  // ---------- Pomůcka: klik na mapu = souřadnice ----------
   mapa.on('click', e => {
     const x = Math.round(e.latlng.lng / sirka * 1000);
     const y = Math.round(e.latlng.lat / vyska * 1000);
-    const radek = `{ nazev: "", kat: "zbrane", x: ${x}, y: ${y}, popis: "" },`;
-
     const obal = document.createElement('div');
     obal.innerHTML = `<b>x: ${x}, y: ${y}</b><br>
-      <code style="font-size:11px">${radek}</code><br>
-      <button style="margin-top:6px;cursor:pointer">Kopírovat řádek</button>`;
+      <button style="margin-top:6px;cursor:pointer">Kopírovat x a y</button>`;
     obal.querySelector('button').addEventListener('click', ev => {
-      navigator.clipboard.writeText(radek);
+      navigator.clipboard.writeText(`${x}\t${y}`);
       ev.target.textContent = 'Zkopírováno ✓';
     });
-
     L.popup().setLatLng(e.latlng).setContent(obal).openOn(mapa);
   });
-});
+})();
 </script>
 </body>
 </html>
